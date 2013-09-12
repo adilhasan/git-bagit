@@ -4,7 +4,8 @@ git-bagit
 Repository of scripts to create a git repository that follows the bagit 
 structure (see http://tools.ietf.org/html/draft-kunze-bagit-09). 
 Bagit is a proposed standard hierarchical file packaging format for storing 
-digital content.
+digital content. This script relies on git SCM (http://git-scm.com/) being 
+installed.
 
 Usage
 -----
