@@ -10,6 +10,7 @@ digital content.
 Usage
 -----
 * To create a repository "test-repo" run the script:
+
     ./git_bagit_init.sh test-repo
 
 This will create a git repository with a "data" and "tags" subdirectory as well as the files "bag-info.txt" and "bagit.txt". The script will also copy the pre-commit hook script "pre-commit" which ensures the manifest files are populated upon commit.

@@ -1,0 +1,144 @@
+#!/bin/bash
+# Git pre-commit hook to create and populate the manifest files necessary
+# to abide by a bagit structure
+#
+# Created: Adil Hasan, 12/Sept/13 DataTailor Ltd
+#
+# Copyright (c) 2013, DataTailor Ltd
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without 
+# modification, are permitted provided that the following conditions 
+# are met:
+#
+# * Redistributions of source code must retain the above copyright notice, 
+#   this list of conditions and the following disclaimer.
+# * Redistributions in binary form must reproduce the above copyright 
+#   notice, this list of conditions and the following disclaimer in the 
+#   documentation and/or other materials provided with the distribution.
+# * Neither the name of the DataTailor Ltd nor the names of its 
+#   contributors may be used to endorse or promote products derived from 
+#   this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS 
+# "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT 
+# LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A 
+# PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER
+# OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, 
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, 
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR 
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF 
+# LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING 
+# NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS 
+# SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#
+
+function filter_file() {
+    # Function to filter a committed file based on the input
+    vars=($@);
+    vlen=${#vars[@]};
+    commit_files=(${vars[@]:1:${vars[0]}});
+    manifest_file=${vars[$((vlen-1))]};
+
+    if [ ${#commit_files[@]} -eq 0 ]; then
+        return 10;
+    fi
+
+    # filter out of the manifest file those files that have been updated
+    # the committed file should replace the existing entry
+    if [ -a ${manifest_file} ] ; then
+        while read fline
+        do
+            fname=$(echo ${fline} | cut -d' ' -f2);
+            if [[ "${commit_files[@]}" =~ "${fname}" ]]; then
+                continue
+            else
+                flist=("${flist[@]}" "${fline}");
+            fi
+        done < ${manifest_file}
+    fi
+    return 0;
+}
+
+function md5_data() {
+    # Function to calculate the md5 for committed files
+    c_files=($@);
+    for line in ${c_files[@]}; do
+        v='';
+        # Get the new files that have been added or modified
+        if [ "${line:0:1}" = "A" ] || [ "${line:0:1}" = "M" ]; then
+            v=${line:1:${#line}};
+        fi
+        # Otherwise skip the line
+        if [ -z ${v} ]; then
+            continue;
+        fi
+        g=$(echo "${v}" | sed -e 's/^[ \t]*//');
+        vv=$(md5sum ${GIT_DIR}/../$g);
+        vg=$(echo ${vv} | awk '{print $1}');
+        commit_lines=("${commit_lines[@]}" "${vg} ${g}");
+    done
+
+    alines=(${commit_lines[@]} ${flist[@]});
+}
+
+OIFS="${IFS}";
+IFS=$'\n';
+data_types=("data" "tags");
+
+data_manifest_file="${GIT_DIR}/../manifest-md5.txt";
+data_manifest_old="${GIT_DIR}/../manifest-md5.txt.old";
+tag_manifest_file="${GIT_DIR}/../tagmanifest-md5.txt";
+tag_manifest_old="${GIT_DIR}/../tagmanifest-md5.txt.old";
+
+manifest_file="";
+manifest_old="";
+
+# Loop over the data and tags direcories and look for committed files
+for data_type in ${data_types[@]}; do
+    if [ "${data_type}" == "data" ]; then
+        manifest_file=${data_manifest_file};
+        manifest_old=${data_manifest_old};
+    fi
+    if [ "${data_type}" == "tags" ]; then
+        manifest_file=${tag_manifest_file};
+        manifest_old=${tag_manifest_old};
+    fi
+
+    commit_files=$(git diff --cached --name-status ${data_type});
+    c_files=();
+    for line in ${commit_files}; do
+        c_files=(${c_files[@]} "${line}");
+    done
+
+    flist=();
+    filter_file ${#c_files[@]} ${c_files[@]} ${manifest_file};
+
+    if [ $? -eq 10 ]; then
+        continue;
+    fi
+
+    commit_lines=();
+    md5_data ${c_files[@]}
+
+    # Replace the manifest file
+    if [ -a ${manifest_file} ]; then
+        mv ${manifest_file} ${manifest_old};
+    fi
+
+    for aline in ${alines[@]}; do
+        echo ${aline} >> ${manifest_file};
+    done
+
+    if [ -a ${manifest_file} ]; then
+        /bin/rm ${manifest_old};
+    fi
+
+    # Add the manifest file to the repository as well
+    git add ${manifest_file};
+
+done
+
+IFS="${OIFS}";
+
+exit 0;
